@@ -33,21 +33,21 @@
             "P3",
             "P4"
         ],
-        "defaultValue": "B1",
+        "defaultValue": "B3",
         "metadata": {
           "description": "The SKU of App Service Plan."
         }
       },
       "linuxFxVersion": {
         "type": "string",
-        "defaultValue": "PYTHON|3.7",
+        "defaultValue": "PYTHON|3.12",
         "metadata": {
           "description": "The Runtime stack of current web app"
         }
       },
       "repoUrl": {
         "type": "string",
-        "defaultValue": "https://github.com/benalexkeen/streamlit-azure-app-services.git",
+        "defaultValue": "https://github.com/malachitumban/streamlit-azure-app-services.git",
         "metadata": {
           "description": "Git Repo URL"
         }
@@ -61,7 +61,7 @@
       }
     },
     "variables": {
-      "appServicePlanPortalName": "[concat('AppServicePlan-', parameters('webAppName'))]"
+      "appServicePlanPortalName": "[concat('asp-', parameters('webAppName'))]"
     },
     "resources": [
       {
