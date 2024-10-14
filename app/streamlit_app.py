@@ -1,158 +1,70 @@
-import altair as alt
-import pandas as pd
 import streamlit as st
-from vega_datasets import data
-
-st.set_page_config(
-    page_title="Time series annotations", page_icon="⬇", layout="centered"
-)
-
-
-@st.experimental_memo
-def get_data():
-    source = data.stocks()
-    source = source[source.date.gt("2004-01-01")]
-    return source
-
-
-@st.experimental_memo(ttl=60 * 60 * 24)
-def get_chart(data):
-    hover = alt.selection_single(
-        fields=["date"],
-        nearest=True,
-        on="mouseover",
-        empty="none",
-    )
-
-    lines = (
-        alt.Chart(data, title="Evolution of stock prices")
-        .mark_line()
-        .encode(
-            x="date",
-            y="price",
-            color="symbol",
-            # strokeDash="symbol",
-        )
-    )
-
-    # Draw points on the line, and highlight based on selection
-    points = lines.transform_filter(hover).mark_circle(size=65)
-
-    # Draw a rule at the location of the selection
-    tooltips = (
-        alt.Chart(data)
-        .mark_rule()
-        .encode(
-            x="yearmonthdate(date)",
-            y="price",
-            opacity=alt.condition(hover, alt.value(0.3), alt.value(0)),
-            tooltip=[
-                alt.Tooltip("date", title="Date"),
-                alt.Tooltip("price", title="Price (USD)"),
-            ],
-        )
-        .add_selection(hover)
-    )
-
-    return (lines + points + tooltips).interactive()
-
-
-st.title("⬇ Time series annotations")
-
-st.write("Give more context to your time series using annotations!")
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    ticker = st.text_input("Choose a ticker (⬇💬👇ℹ️ ...)", value="⬇")
-with col2:
-    ticker_dx = st.slider(
-        "Horizontal offset", min_value=-30, max_value=30, step=1, value=0
-    )
-with col3:
-    ticker_dy = st.slider(
-        "Vertical offset", min_value=-30, max_value=30, step=1, value=-10
-    )
-
-# Original time series chart. Omitted `get_chart` for clarity
-source = get_data()
-chart = get_chart(source)
-
-# Input annotations
-ANNOTATIONS = [
-    ("Mar 01, 2008", "Pretty good day for GOOG"),
-    ("Dec 01, 2007", "Something's going wrong for GOOG & AAPL"),
-    ("Nov 01, 2008", "Market starts again thanks to..."),
-    ("Dec 01, 2009", "Small crash for GOOG after..."),
-]
-
-# Create a chart with annotations
-annotations_df = pd.DataFrame(ANNOTATIONS, columns=["date", "event"])
-annotations_df.date = pd.to_datetime(annotations_df.date)
-annotations_df["y"] = 0
-annotation_layer = (
-    alt.Chart(annotations_df)
-    .mark_text(size=15, text=ticker, dx=ticker_dx, dy=ticker_dy, align="center")
-    .encode(
-        x="date:T",
-        y=alt.Y("y:Q"),
-        tooltip=["event"],
-    )
-    .interactive()
-)
-
-# Display both charts together
-st.altair_chart((chart + annotation_layer).interactive(), use_container_width=True)
-
-st.write("## Code")
-
-st.write(
-    "See more in our public [GitHub repository](https://github.com/streamlit/example-app-time-series-annotation)"
-)
-
-st.code(
-    f"""
-import altair as alt
+from azure.identity import DefaultAzureCredential, ClientSecretCredential
+from azure.keyvault.secrets import SecretClient
+from azure.storage.filedatalake import DataLakeServiceClient
 import pandas as pd
-import streamlit as st
-from vega_datasets import data
 
-@st.experimental_memo
-def get_data():
-    source = data.stocks()
-    source = source[source.date.gt("2004-01-01")]
-    return source
+# Function to get secret from Azure Key Vault
+def get_secret_from_key_vault(vault_url, secret_name, tenant_id, client_id, client_secret):
+    credential = ClientSecretCredential(tenant_id, client_id, client_secret)
+    secret_client = SecretClient(vault_url=vault_url, credential=credential)
+    secret = secret_client.get_secret(secret_name)
+    return secret.value
 
-source = get_data()
+# Function to initialize the DataLakeServiceClient
+def initialize_storage_account(storage_account_name, account_key):
+    try:
+        datalake_service_client = DataLakeServiceClient(
+            account_url=f"https://{storage_account_name}.dfs.core.windows.net",
+            credential=account_key
+        )
+        return datalake_service_client
+    except Exception as e:
+        st.error(f"Error initializing storage account: {e}")
+        return None
 
-# Original time series chart. Omitted `get_chart` for clarity
-chart = get_chart(source)
+# Function to list files and their metadata
+def list_files_and_metadata(datalake_service_client, file_system_name, directory_path):
+    try:
+        file_system_client = datalake_service_client.get_file_system_client(file_system_name)
+        paths = file_system_client.get_paths(path=directory_path)
+        
+        file_data = []
+        for path in paths:
+            file_client = file_system_client.get_file_client(path.name)
+            properties = file_client.get_file_properties()
+            file_data.append({
+                "File Name": path.name,
+                "Size (Bytes)": properties['content_length'],
+                "Last Modified": properties['last_modified']
+            })
+        
+        return pd.DataFrame(file_data)
+    except Exception as e:
+        st.error(f"Error listing files and metadata: {e}")
+        return pd.DataFrame()
 
-# Input annotations
-ANNOTATIONS = [
-    ("Mar 01, 2008", "Pretty good day for GOOG"),
-    ("Dec 01, 2007", "Something's going wrong for GOOG & AAPL"),
-    ("Nov 01, 2008", "Market starts again thanks to..."),
-    ("Dec 01, 2009", "Small crash for GOOG after..."),
-]
+# Streamlit app
+st.title("ADLS Gen2 File Metadata Viewer")
 
-# Create a chart with annotations
-annotations_df = pd.DataFrame(ANNOTATIONS, columns=["date", "event"])
-annotations_df.date = pd.to_datetime(annotations_df.date)
-annotations_df["y"] = 0
-annotation_layer = (
-    alt.Chart(annotations_df)
-    .mark_text(size=15, text="{ticker}", dx={ticker_dx}, dy={ticker_dy}, align="center")
-    .encode(
-        x="date:T",
-        y=alt.Y("y:Q"),
-        tooltip=["event"],
-    )
-    .interactive()
-)
+vault_url = st.text_input("Key Vault URL")
+secret_name = st.text_input("Secret Name for Storage Account Key")
+tenant_id = st.text_input("Tenant ID")
+client_id = st.text_input("Client ID")
+client_secret = st.text_input("Client Secret", type="password")
+storage_account_name = st.text_input("Storage Account Name")
+file_system_name = st.text_input("File System Name")
+directory_path = st.text_input("Directory Path")
 
-# Display both charts together
-st.altair_chart((chart + annotation_layer).interactive(), use_container_width=True)
-
-""",
-    "python",
-)
+if st.button("List Files"):
+    if vault_url and secret_name and tenant_id and client_id and client_secret and storage_account_name and file_system_name and directory_path:
+        account_key = get_secret_from_key_vault(vault_url, secret_name, tenant_id, client_id, client_secret)
+        datalake_service_client = initialize_storage_account(storage_account_name, account_key)
+        if datalake_service_client:
+            file_metadata_df = list_files_and_metadata(datalake_service_client, file_system_name, directory_path)
+            if not file_metadata_df.empty:
+                st.dataframe(file_metadata_df)
+            else:
+                st.write("No files found or error retrieving files.")
+    else:
+        st.error("Please provide all required inputs.")
