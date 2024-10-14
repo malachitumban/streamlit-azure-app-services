@@ -45,7 +45,7 @@ def list_files_and_metadata(datalake_service_client, file_system_name, directory
         return pd.DataFrame()
 
 # Streamlit app
-st.title("ALPINE - ADLS Gen2 File Metadata Viewer")
+st.title("ALPINE - ADLS File Metadata Viewer")
 
 vault_url = st.text_input("Key Vault URL")
 secret_name = st.text_input("Secret Name for Storage Account Key")
