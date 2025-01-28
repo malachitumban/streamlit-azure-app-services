@@ -31,13 +31,17 @@ def list_files_and_metadata(datalake_service_client, file_system_name, directory
         
         file_data = []
         for path in paths:
-            file_client = file_system_client.get_file_client(path.name)
-            properties = file_client.get_file_properties()
-            file_data.append({
-                "File Name": path.name,
-                "Size (Bytes)": properties['content_length'],
-                "Last Modified": properties['last_modified']
-            })
+            if not path.is_directory:  # Only process files
+                file_client = file_system_client.get_file_client(path.name)
+                properties = file_client.get_file_properties()
+                file_data.append({
+                    "File Name": path.name,
+                    "Size (Bytes)": properties.get('content_length', 0),  # Default to 0 if not present
+                    "Last Modified": properties.get('last_modified', None)  # Default to None if not present
+                })
+            # else:
+            #     # Optionally, log or display directories if needed
+            #     st.write(f"Skipping directory: {path.name}")
         
         return pd.DataFrame(file_data)
     except Exception as e:
